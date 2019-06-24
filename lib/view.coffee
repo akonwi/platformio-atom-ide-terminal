@@ -8,8 +8,14 @@ InputDialog = null
 path = require 'path'
 os = require 'os'
 
+{isVisible} = require './utils'
+
 lastOpenedView = null
 lastActiveElement = null
+
+getDockSetting = -> atom.config.get('platformio-ide-terminal.toggles.useDock')
+
+nextId = 0
 
 module.exports =
 class PlatformIOTerminalView extends View
@@ -30,7 +36,7 @@ class PlatformIOTerminalView extends View
         @div class: 'btn-toolbar', =>
           @div class: 'btn-group', =>
             @button outlet: 'inputBtn', class: 'btn icon icon-keyboard', click: 'inputDialog'
-          @div class: 'btn-group right', =>
+          if getDockSetting() then null else @div class: 'btn-group right', =>
             @button outlet: 'hideBtn', class: 'btn icon icon-chevron-down', click: 'hide'
             @button outlet: 'maximizeBtn', class: 'btn icon icon-screen-full', click: 'maximize'
             @button outlet: 'closeBtn', class: 'btn icon icon-x', click: 'destroy'
@@ -39,16 +45,29 @@ class PlatformIOTerminalView extends View
   @getFocusedTerminal: ->
     return Terminal.Terminal.focus
 
+  getURI: -> """atom://platformio-atom-ide-terminal/#{@viewId}"""
+
+  getDefaultLocation: -> "bottom"
+
+  getAllowedLocations: -> ["bottom"]
+
+  isPermanentDockItem: -> false
+
   initialize: (@id, @pwd, @statusIcon, @statusBar, @shell, @args=[], @env={}, @autoRun=[]) ->
+    @shouldUseDock = getDockSetting()
+    if @shouldUseDock
+      @viewId = nextId++
+
     @subscriptions = new CompositeDisposable
     @emitter = new Emitter
 
-    @subscriptions.add atom.tooltips.add @closeBtn,
-      title: 'Close'
-    @subscriptions.add atom.tooltips.add @hideBtn,
-      title: 'Hide'
-    @subscriptions.add @maximizeBtn.tooltip = atom.tooltips.add @maximizeBtn,
-      title: 'Fullscreen'
+    unless @shouldUseDock
+      @subscriptions.add atom.tooltips.add @closeBtn,
+        title: 'Close'
+      @subscriptions.add atom.tooltips.add @hideBtn,
+        title: 'Hide'
+      @subscriptions.add @maximizeBtn.tooltip = atom.tooltips.add @maximizeBtn,
+        title: 'Fullscreen'
     @inputBtn.tooltip = atom.tooltips.add @inputBtn,
       title: 'Insert Text'
 
@@ -57,7 +76,7 @@ class PlatformIOTerminalView extends View
       percent = Math.abs(Math.min(parseFloat(@prevHeight) / 100.0, 1))
       bottomHeight = $('atom-panel.bottom').children(".terminal-view").height() or 0
       @prevHeight = percent * ($('.item-views').height() + bottomHeight)
-    @xterm.height 0
+    if not @shouldUseDock then @xterm.height 0
 
     @setAnimationSpeed()
     @subscriptions.add atom.config.onDidChange 'platformio-ide-terminal.style.animationSpeed', @setAnimationSpeed
@@ -90,8 +109,11 @@ class PlatformIOTerminalView extends View
       @args.unshift '--login'
 
   attach: ->
-    return if @panel?
-    @panel = atom.workspace.addBottomPanel(item: this, visible: false)
+    if @shouldUseDock
+      atom.workspace.open(this)
+    else
+      return if @panel?
+      @panel = atom.workspace.addBottomPanel(item: this, visible: false)
 
   setAnimationSpeed: =>
     @animationSpeed = atom.config.get('platformio-ide-terminal.style.animationSpeed')
@@ -150,6 +172,7 @@ class PlatformIOTerminalView extends View
 
     @ptyProcess.on "platformio-ide-terminal:title", (title) =>
       @process = title
+      @emit 'did-change-title'
     @terminal.on "title", (title) =>
       @title = title
 
@@ -162,6 +185,9 @@ class PlatformIOTerminalView extends View
       @input "#{autoRunCommand}#{os.EOL}" if autoRunCommand
       @input "#{command}#{os.EOL}" for command in @autoRun
 
+  onDidDestroy: (callback) ->
+      @emitter.on 'did-destroy', callback
+
   destroy: ->
     @subscriptions.dispose()
     @statusIcon.destroy()
@@ -169,17 +195,20 @@ class PlatformIOTerminalView extends View
     @detachResizeEvents()
     @detachWindowEvents()
 
-    if @panel.isVisible()
-      @hide()
-      @onTransitionEnd => @panel.destroy()
-    else
-      @panel.destroy()
+    unless @shouldUseDock
+      if @panel.isVisible()
+        @hide()
+        @onTransitionEnd => @panel.destroy()
+      else
+        @panel.destroy()
 
     if @statusIcon and @statusIcon.parentNode
       @statusIcon.parentNode.removeChild(@statusIcon)
 
     @ptyProcess?.terminate()
     @terminal?.destroy()
+    @emit 'did-destroy'
+    @emitter.dispose()
 
   maximize: ->
     @subscriptions.remove @maximizeBtn.tooltip
@@ -206,6 +235,8 @@ class PlatformIOTerminalView extends View
 
   open: =>
     lastActiveElement ?= $(document.activeElement)
+
+    if @shouldUseDock then return @openInDock()
 
     if lastOpenedView and lastOpenedView != this
       if lastOpenedView.maximized
@@ -240,7 +271,20 @@ class PlatformIOTerminalView extends View
     @animating = true
     @xterm.height if @maximized then @maxHeight else @prevHeight
 
+  openInDock: =>
+    @statusBar.setActiveTerminalView this
+    @statusIcon.activate()
+    atom.workspace.open(this, activatePane: true)
+    .then =>
+      if not @opened
+        @opened = true
+        @displayTerminal()
+        @xterm.height("100%")
+        @emit "platformio-ide-terminal:terminal-open"
+      else @focus()
+
   hide: =>
+    if @shouldUseDock then return @hideInDock()
     @terminal?.blur()
     lastOpenedView = null
     @statusIcon.deactivate()
@@ -256,10 +300,23 @@ class PlatformIOTerminalView extends View
     @animating = true
     @xterm.height 0
 
+  hideInDock: =>
+    @terminal?.blur()
+    @statusIcon.deactivate()
+    atom.workspace.hide(this)
+
   toggle: ->
+    if @shouldUseDock then return @toggleInDock()
+
     return if @animating
 
     if @panel.isVisible()
+      @hide()
+    else
+      @open()
+
+  toggleInDock: =>
+    if isVisible this
       @hide()
     else
       @open()
@@ -493,8 +550,20 @@ class PlatformIOTerminalView extends View
       lastActiveElement.focus()
 
   resizeTerminalToView: ->
+    if @shouldUseDock then return @resizeInDock()
+
     return unless @panel.isVisible() or @tabView
 
+    {cols, rows} = @getDimensions()
+    return unless cols > 0 and rows > 0
+    return unless @terminal
+    return if @terminal.rows is rows and @terminal.cols is cols
+
+    @resize cols, rows
+    @terminal.resize cols, rows
+
+  resizeInDock: ->
+    if not isVisible(this) then return
     {cols, rows} = @getDimensions()
     return unless cols > 0 and rows > 0
     return unless @terminal
@@ -551,7 +620,10 @@ class PlatformIOTerminalView extends View
       lastOpenedView = null if lastOpenedView == this
 
   getTitle: ->
-    @statusIcon.getName() or "platformio-ide-terminal"
+    iconOrDefault = @statusIcon.getName() or "platformio-ide-terminal"
+    if @shouldUseDock and @title then return @title
+
+    return iconOrDefault
 
   getIconName: ->
     "terminal"

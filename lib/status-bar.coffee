@@ -315,8 +315,7 @@ class StatusBar extends View
   destroy: ->
     @subscriptions.dispose()
     for view in @terminalViews
-      view.ptyProcess.terminate()
-      view.terminal.destroy()
+      view.destroy()
     @detach()
 
   toggle: ->
