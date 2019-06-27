@@ -78,7 +78,7 @@ class StatusBar extends View
               nextTerminal = @createTerminalView()
           else
             @setActiveTerminalView(nextTerminal)
-            nextTerminal.toggle() if prevTerminal?.panel.isVisible()
+            nextTerminal.toggle() if prevTerminal?.panel?.isVisible()
 
     @registerContextMenu()
 
