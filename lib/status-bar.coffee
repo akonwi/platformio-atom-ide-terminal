@@ -78,7 +78,8 @@ class StatusBar extends View
               nextTerminal = @createTerminalView()
           else
             @setActiveTerminalView(nextTerminal)
-            nextTerminal.toggle() if prevTerminal?.panel?.isVisible()
+            if prevTerminal?.panel?.isVisible() or atom.workspace.getBottomDock().isVisible()
+              nextTerminal.toggle()
 
     @registerContextMenu()
 
