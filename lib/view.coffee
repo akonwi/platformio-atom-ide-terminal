@@ -8,12 +8,10 @@ InputDialog = null
 path = require 'path'
 os = require 'os'
 
-{isVisible} = require './utils'
+{isVisible, getDockSetting} = require './utils'
 
 lastOpenedView = null
 lastActiveElement = null
-
-getDockSetting = -> atom.config.get('platformio-ide-terminal.toggles.useDock')
 
 nextId = 0
 
@@ -32,11 +30,11 @@ class PlatformIOTerminalView extends View
   @content: ->
     @div class: 'platformio-ide-terminal terminal-view', outlet: 'platformIOTerminalView', =>
       @div class: 'panel-divider', outlet: 'panelDivider'
-      @section class: 'input-block', =>
+      if getDockSetting() then null else @section class: 'input-block', =>
         @div class: 'btn-toolbar', =>
           @div class: 'btn-group', =>
             @button outlet: 'inputBtn', class: 'btn icon icon-keyboard', click: 'inputDialog'
-          if getDockSetting() then null else @div class: 'btn-group right', =>
+          @div class: 'btn-group right', =>
             @button outlet: 'hideBtn', class: 'btn icon icon-chevron-down', click: 'hide'
             @button outlet: 'maximizeBtn', class: 'btn icon icon-screen-full', click: 'maximize'
             @button outlet: 'closeBtn', class: 'btn icon icon-x', click: 'destroy'
@@ -68,8 +66,8 @@ class PlatformIOTerminalView extends View
         title: 'Hide'
       @subscriptions.add @maximizeBtn.tooltip = atom.tooltips.add @maximizeBtn,
         title: 'Fullscreen'
-    @inputBtn.tooltip = atom.tooltips.add @inputBtn,
-      title: 'Insert Text'
+      @inputBtn.tooltip = atom.tooltips.add @inputBtn,
+        title: 'Insert Text'
 
     @prevHeight = atom.config.get('platformio-ide-terminal.style.defaultPanelHeight')
     if @prevHeight.indexOf('%') > 0

@@ -1,8 +1,10 @@
 {CompositeDisposable} = require 'atom'
 {$, View} = require 'atom-space-pen-views'
 
+InputDialog = null
 PlatformIOTerminalView = require './view'
 StatusIcon = require './status-icon'
+{getDockSetting} = require './utils'
 
 os = require 'os'
 path = require 'path'
@@ -19,6 +21,7 @@ class StatusBar extends View
       @i class: "icon icon-plus", click: 'newTerminalView', outlet: 'plusBtn'
       @ul class: "list-inline status-container", tabindex: '-1', outlet: 'statusContainer', is: 'space-pen-ul'
       @i class: "icon icon-x", click: 'closeAll', outlet: 'closeBtn'
+      if not getDockSetting() then null else @i class: 'icon icon-keyboard', style: 'margin-left: 10px', outlet: 'inputBtn', click: 'inputDialog'
 
   initialize: (@statusBarProvider) ->
     @subscriptions = new CompositeDisposable()
@@ -312,6 +315,12 @@ class StatusBar extends View
       if view?
         view.destroy()
     @activeTerminal = null
+
+  inputDialog: ->
+    if not @activeTerminal then return
+    InputDialog ?= require('./input-dialog')
+    dialog = new InputDialog @activeTerminal
+    dialog.attach()
 
   destroy: ->
     @subscriptions.dispose()
